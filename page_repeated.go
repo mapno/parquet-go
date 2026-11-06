@@ -58,44 +58,41 @@ func (page *repeatedPage) Values() ValueReader {
 }
 
 func (page *repeatedPage) Slice(i, j int64) Page {
-	numRows := page.NumRows()
-	if i < 0 || i > numRows {
-		panic(errPageBoundsOutOfRange(i, j, numRows))
-	}
-	if j < 0 || j > numRows {
-		panic(errPageBoundsOutOfRange(i, j, numRows))
-	}
-	if i > j {
-		panic(errPageBoundsOutOfRange(i, j, numRows))
-	}
-
 	maxRepetitionLevel := page.maxRepetitionLevel
 	maxDefinitionLevel := page.maxDefinitionLevel
 	repetitionLevels := page.repetitionLevels
 	definitionLevels := page.definitionLevels
 
-	rowIndex0 := 0
-	rowIndex1 := len(repetitionLevels)
-	rowIndex2 := len(repetitionLevels)
-
-	for k, def := range repetitionLevels {
-		if def == 0 {
-			if rowIndex0 == int(i) {
-				rowIndex1 = k
-				break
-			}
-			rowIndex0++
-		}
+	if i < 0 || j < 0 || i > j {
+		panic(errPageBoundsOutOfRange(i, j, page.NumRows()))
 	}
 
-	for k, def := range repetitionLevels[rowIndex1:] {
-		if def == 0 {
-			if rowIndex0 == int(j) {
-				rowIndex2 = rowIndex1 + k
-				break
-			}
-			rowIndex0++
+	rowIndex0 := int64(0)
+	rowIndex1 := len(repetitionLevels)
+	rowIndex2 := len(repetitionLevels)
+	numRows := int64(-1)
+
+	// Locate both row boundaries in one pass. Once the end boundary is found,
+	// only the remaining levels need to be counted to validate the bounds.
+	for k, level := range repetitionLevels {
+		if level != 0 {
+			continue
 		}
+		if rowIndex0 == i {
+			rowIndex1 = k
+		}
+		if rowIndex0 == j {
+			rowIndex2 = k
+			numRows = j + int64(countLevelsEqual(repetitionLevels[k:], 0))
+			break
+		}
+		rowIndex0++
+	}
+	if numRows < 0 {
+		numRows = rowIndex0
+	}
+	if i > numRows || j > numRows {
+		panic(errPageBoundsOutOfRange(i, j, numRows))
 	}
 
 	numNulls1 := countLevelsNotEqual(definitionLevels[:rowIndex1], maxDefinitionLevel)
